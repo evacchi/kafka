@@ -132,6 +132,7 @@ ext {
 allprojects {
 
   repositories {
+    mavenLocal()
     mavenCentral()
   }
 
@@ -1073,6 +1074,9 @@ project(':core') {
     }
     // ZooKeeperMain depends on commons-cli but declares the dependency as `provided`
     implementation libs.commonsCli
+
+    implementation libs.chicorySdk
+
 
     compileOnly libs.reload4j
 

@@ -16,6 +16,8 @@
  */
 package kafka.server
 
+import com.fasterxml.jackson.databind.json.JsonMapper
+import com.fasterxml.jackson.databind.{DeserializationFeature, MapperFeature, SerializationFeature}
 import com.yammer.metrics.core.Meter
 import kafka.cluster.{BrokerEndPoint, Partition, PartitionListener}
 import kafka.controller.{KafkaController, StateChangeLogger}
@@ -23,10 +25,13 @@ import kafka.log.remote.RemoteLogManager
 import kafka.log.{LogManager, OffsetResultHolder, UnifiedLog}
 import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
-import kafka.server.ReplicaManager.{AtMinIsrPartitionCountMetricName, FailedIsrUpdatesPerSecMetricName, IsrExpandsPerSecMetricName, IsrShrinksPerSecMetricName, LeaderCountMetricName, OfflineReplicaCountMetricName, PartitionCountMetricName, PartitionsWithLateTransactionsCountMetricName, ProducerIdCountMetricName, ReassigningPartitionsMetricName, UnderMinIsrPartitionCountMetricName, UnderReplicatedPartitionsMetricName, createLogReadResult, isListOffsetsTimestampUnsupported}
+import kafka.server.ReplicaManager._
 import kafka.server.metadata.ZkMetadataCache
+import kafka.server.transform.KafkaTransform
 import kafka.utils._
 import kafka.zk.KafkaZkClient
+import org.apache.kafka.common._
+import org.apache.kafka.common.compress.Compression
 import org.apache.kafka.common.errors._
 import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.message.DeleteRecordsResponseData.DeleteRecordsPartitionResult
@@ -50,21 +55,20 @@ import org.apache.kafka.common.requests.FetchRequest.PartitionData
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
 import org.apache.kafka.common.requests._
 import org.apache.kafka.common.utils.{Exit, Time}
-import org.apache.kafka.common.{ElectionType, IsolationLevel, Node, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.image.{LocalReplicaChanges, MetadataImage, TopicsDelta}
 import org.apache.kafka.metadata.LeaderAndIsr
 import org.apache.kafka.metadata.LeaderConstants.NO_LEADER
 import org.apache.kafka.server.common
-import org.apache.kafka.server.common.{DirectoryEventHandler, RequestLocal}
 import org.apache.kafka.server.common.MetadataVersion._
+import org.apache.kafka.server.common.{DirectoryEventHandler, RequestLocal}
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import org.apache.kafka.server.storage.log.{FetchParams, FetchPartitionData}
 import org.apache.kafka.server.util.{Scheduler, ShutdownableThread}
 import org.apache.kafka.storage.internals.checkpoint.{LazyOffsetCheckpoints, OffsetCheckpointFile, OffsetCheckpoints}
-import org.apache.kafka.storage.internals.log.{AppendOrigin, FetchDataInfo, LeaderHwChange, LogAppendInfo, LogConfig, LogDirFailureChannel, LogOffsetMetadata, LogReadInfo, RecordValidationException, RemoteLogReadResult, RemoteStorageFetchInfo, VerificationGuard}
+import org.apache.kafka.storage.internals.log._
 import org.apache.kafka.storage.log.metrics.BrokerTopicStats
 
-import java.io.File
+import java.io.{File, FileInputStream}
 import java.lang.{Long => JLong}
 import java.nio.file.{Files, Paths}
 import java.util
@@ -293,6 +297,15 @@ class ReplicaManager(val config: KafkaConfig,
                      val defaultActionQueue: ActionQueue = new DelayedActionQueue
                      ) extends Logging {
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
+
+  val ktransform = KafkaTransform.fromInputStream("my-first-plugin",
+    new FileInputStream("/Users/evacchi/Devel/dylibso/xtp-demo/plugins/upper/dist/plugin.wasm"))
+  val mapper = JsonMapper.builder()
+    .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
+    .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+    .enable(MapperFeature.AUTO_DETECT_FIELDS).build()
+
+
 
   val delayedProducePurgatory = delayedProducePurgatoryParam.getOrElse(
     DelayedOperationPurgatory[DelayedProduce](
@@ -892,6 +905,51 @@ class ReplicaManager(val config: KafkaConfig,
         actionQueue = actionQueue,
         verificationGuards = verificationGuards
       )
+
+      val vs = entriesWithoutErrorsPerPartition.map { case (k, v) =>
+        k -> {
+          val rs: Iterable[transform.Record] =
+            for (b <- v.batches().asScala; r <- b.asScala)
+              yield {
+                val key =
+                  if (r.keySize() > 0) {
+                    val bytes = new Array[Byte](r.keySize())
+                    r.key().get(bytes)
+                    bytes
+                  } else new Array[Byte](0)
+                val value =
+                  if (r.valueSize() > 0) {
+                    val bytes = new Array[Byte](r.valueSize())
+                    r.value().get(bytes)
+                    bytes
+                  } else new Array[Byte](0)
+
+                logger.info(new String(value))
+                new transform.Record(k.topic(), key, value, r.headers())
+              }
+
+          val srs = rs
+            .flatMap(r => ktransform.transform(r, mapper).asScala)
+            .map(r => new SimpleRecord(time.milliseconds(), r.key(), r.value())).toArray[SimpleRecord]
+          logger.info(srs.mkString(","))
+
+          MemoryRecords.withRecords(Compression.NONE, srs:_*)
+        }
+      }
+
+      appendRecords(
+        timeout = timeout,
+        requiredAcks = -1,
+        internalTopicsAllowed = false,
+        origin = AppendOrigin.CLIENT,
+        entriesPerPartition = vs,
+        responseCallback = m => (),
+        recordValidationStatsCallback = m => (),
+        requestLocal = RequestLocal.noCaching(),
+        actionQueue = actionQueue,
+        verificationGuards = Map.empty
+      )
+
     }
 
     if (transactionalProducerInfo.size < 1) {

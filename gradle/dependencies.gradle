@@ -252,5 +252,6 @@ libs += [
   mavenArtifact: "org.apache.maven:maven-artifact:$versions.mavenArtifact",
   zstd: "com.github.luben:zstd-jni:$versions.zstd",
   httpclient: "org.apache.httpcomponents:httpclient:$versions.httpclient",
-  hdrHistogram: "org.hdrhistogram:HdrHistogram:$versions.hdrHistogram"
+  hdrHistogram: "org.hdrhistogram:HdrHistogram:$versions.hdrHistogram",
+  chicorySdk: "org.extism:chicory-sdk:1.0-SNAPSHOT"
 ]
