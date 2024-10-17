@@ -5,29 +5,41 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Record {
+
+    public transient long timestamp;
     public String topic;
     public byte[] key;
     public byte[] value;
     public List<Header> headers;
 
-//    public static Record of(String topic, SimpleRecord r) throws IOException {
-//        return new Record(
-//                topic,
-//                r.key().array(),
-//                r.value().array(),
-//                extractHeaders(Arrays.stream(r.headers()).toArray(org.apache.kafka.common.header.Header[]::new)));
-//    }
-//
+    public Record() {}
 
-
-    public Record() {
+    public Record(String topic, org.apache.kafka.common.record.Record r) {
+        this.topic = topic;
+        this.timestamp = r.timestamp();
+        this.key = keyToArray(r);
+        this.value = valueToArray(r);
+        this.headers = extractHeaders(r.headers());
     }
 
-    public Record(String topic, byte[] key, byte[] value, org.apache.kafka.common.header.Header[] headers) {
-        this.topic = topic;
-        this.key = key;
-        this.value = value;
-        this.headers = extractHeaders(headers);
+    private static byte[] keyToArray(org.apache.kafka.common.record.Record r) {
+        if (r.keySize() > 0) {
+            var bytes = new byte[r.keySize()];
+            r.key().get(bytes);
+            return bytes;
+        } else return new byte[0];
+    }
+
+    private static byte[] valueToArray(org.apache.kafka.common.record.Record r) {
+        if (r.valueSize() > 0) {
+            var bytes = new byte[r.valueSize()];
+            r.value().get(bytes);
+            return bytes;
+        } else return new byte[0];
+    }
+
+    public long timestamp() {
+        return timestamp;
     }
 
     public byte[] key() {
@@ -37,12 +49,6 @@ public class Record {
     public byte[] value() {
         return value;
     }
-
-    //    public Record withHeaders(List<Header> headers) {
-//        List<Header> h = this.headers == null ? new ArrayList<>() : new ArrayList<>(this.headers);
-//        h.addAll(headers);
-//        return new Record(topic, key, value, h);
-//    }
 
     private static List<Header> extractHeaders(org.apache.kafka.common.header.Header[] headers) {
         var l = new ArrayList<Header>();

@@ -27,11 +27,10 @@ import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.ReplicaManager._
 import kafka.server.metadata.ZkMetadataCache
-import kafka.server.transform.KafkaTransform
+import kafka.server.transform.{KafkaTransform, RecordBatches}
 import kafka.utils._
 import kafka.zk.KafkaZkClient
 import org.apache.kafka.common._
-import org.apache.kafka.common.compress.Compression
 import org.apache.kafka.common.errors._
 import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.message.DeleteRecordsResponseData.DeleteRecordsPartitionResult
@@ -907,34 +906,7 @@ class ReplicaManager(val config: KafkaConfig,
       )
 
       val vs = entriesWithoutErrorsPerPartition.map { case (k, v) =>
-        k -> {
-          val rs: Iterable[transform.Record] =
-            for (b <- v.batches().asScala; r <- b.asScala)
-              yield {
-                val key =
-                  if (r.keySize() > 0) {
-                    val bytes = new Array[Byte](r.keySize())
-                    r.key().get(bytes)
-                    bytes
-                  } else new Array[Byte](0)
-                val value =
-                  if (r.valueSize() > 0) {
-                    val bytes = new Array[Byte](r.valueSize())
-                    r.value().get(bytes)
-                    bytes
-                  } else new Array[Byte](0)
-
-                logger.info(new String(value))
-                new transform.Record(k.topic(), key, value, r.headers())
-              }
-
-          val srs = rs
-            .flatMap(r => ktransform.transform(r, mapper).asScala)
-            .map(r => new SimpleRecord(time.milliseconds(), r.key(), r.value())).toArray[SimpleRecord]
-          logger.info(srs.mkString(","))
-
-          MemoryRecords.withRecords(Compression.NONE, srs:_*)
-        }
+        k -> RecordBatches.fromRecords(k.topic(), v, ktransform, mapper)
       }
 
       appendRecords(

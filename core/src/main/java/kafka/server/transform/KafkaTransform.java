@@ -8,6 +8,7 @@ import org.extism.chicory.sdk.Plugin;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.util.List;
 
 public class KafkaTransform {
@@ -30,9 +31,13 @@ public class KafkaTransform {
         return pluginName;
     }
 
-    public List<Record> transform(Record record, ObjectMapper mapper) throws IOException {
-        return mapper.readValue(transformBytes(mapper.writeValueAsBytes(record)),
-                new TypeReference<List<Record>>() {});
+    public List<Record> transform(Record record, ObjectMapper mapper) {
+        try {
+            return mapper.readValue(transformBytes(mapper.writeValueAsBytes(record)),
+                    new TypeReference<List<Record>>() {});
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     public byte[] transformBytes(byte[] recordBytes) {
