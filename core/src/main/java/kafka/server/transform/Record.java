@@ -1,5 +1,6 @@
 package kafka.server.transform;
 
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -8,45 +9,35 @@ public class Record {
 
     public transient long timestamp;
     public String topic;
-    public byte[] key;
-    public byte[] value;
+    public ByteBuffer key;
+    public ByteBuffer value;
     public List<Header> headers;
 
-    public Record() {}
+    public Record() {
+    }
 
-    public Record(String topic, org.apache.kafka.common.record.Record r) {
+    public Record(
+            String topic,
+            ByteBuffer key,
+            ByteBuffer value,
+            long timestamp,
+            org.apache.kafka.common.header.Header[] headers) {
         this.topic = topic;
-        this.timestamp = r.timestamp();
-        this.key = keyToArray(r);
-        this.value = valueToArray(r);
-        this.headers = extractHeaders(r.headers());
-    }
-
-    private static byte[] keyToArray(org.apache.kafka.common.record.Record r) {
-        if (r.keySize() > 0) {
-            var bytes = new byte[r.keySize()];
-            r.key().get(bytes);
-            return bytes;
-        } else return new byte[0];
-    }
-
-    private static byte[] valueToArray(org.apache.kafka.common.record.Record r) {
-        if (r.valueSize() > 0) {
-            var bytes = new byte[r.valueSize()];
-            r.value().get(bytes);
-            return bytes;
-        } else return new byte[0];
+        this.timestamp = timestamp;
+        this.key = key;
+        this.value = value;
+        this.headers = extractHeaders(headers);
     }
 
     public long timestamp() {
         return timestamp;
     }
 
-    public byte[] key() {
+    public ByteBuffer key() {
         return key;
     }
 
-    public byte[] value() {
+    public ByteBuffer value() {
         return value;
     }
 

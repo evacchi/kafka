@@ -16,8 +16,6 @@
  */
 package kafka.server
 
-import com.fasterxml.jackson.databind.json.JsonMapper
-import com.fasterxml.jackson.databind.{DeserializationFeature, MapperFeature, SerializationFeature}
 import com.yammer.metrics.core.Meter
 import kafka.cluster.{BrokerEndPoint, Partition, PartitionListener}
 import kafka.controller.{KafkaController, StateChangeLogger}
@@ -27,7 +25,7 @@ import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.ReplicaManager._
 import kafka.server.metadata.ZkMetadataCache
-import kafka.server.transform.{KafkaTransform, RecordBatches}
+import kafka.server.transform.TransformStore
 import kafka.utils._
 import kafka.zk.KafkaZkClient
 import org.apache.kafka.common._
@@ -67,7 +65,7 @@ import org.apache.kafka.storage.internals.checkpoint.{LazyOffsetCheckpoints, Off
 import org.apache.kafka.storage.internals.log._
 import org.apache.kafka.storage.log.metrics.BrokerTopicStats
 
-import java.io.{File, FileInputStream}
+import java.io.File
 import java.lang.{Long => JLong}
 import java.nio.file.{Files, Paths}
 import java.util
@@ -297,14 +295,7 @@ class ReplicaManager(val config: KafkaConfig,
                      ) extends Logging {
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
 
-  val ktransform = KafkaTransform.fromInputStream("my-first-plugin",
-    new FileInputStream("/Users/evacchi/Devel/dylibso/xtp-demo/plugins/upper/dist/plugin.wasm"))
-  val mapper = JsonMapper.builder()
-    .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
-    .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-    .enable(MapperFeature.AUTO_DETECT_FIELDS).build()
-
-
+  val transformStore = new TransformStore()
 
   val delayedProducePurgatory = delayedProducePurgatoryParam.getOrElse(
     DelayedOperationPurgatory[DelayedProduce](
@@ -906,7 +897,7 @@ class ReplicaManager(val config: KafkaConfig,
       )
 
       val vs = entriesWithoutErrorsPerPartition.map { case (k, v) =>
-        k -> RecordBatches.fromRecords(k.topic(), v, ktransform, mapper)
+        k -> transformStore.transform(k, v)
       }
 
       appendRecords(
@@ -915,8 +906,10 @@ class ReplicaManager(val config: KafkaConfig,
         internalTopicsAllowed = false,
         origin = AppendOrigin.CLIENT,
         entriesPerPartition = vs,
-        responseCallback = m => (),
-        recordValidationStatsCallback = m => (),
+        responseCallback =  m =>
+          logger.info(s"response callback ${m}"),
+        recordValidationStatsCallback = m =>
+          logger.info(s"validation callback ${m}"),
         requestLocal = RequestLocal.noCaching(),
         actionQueue = actionQueue,
         verificationGuards = Map.empty

@@ -11,18 +11,18 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.util.List;
 
-public class KafkaTransform {
-    public static KafkaTransform fromInputStream(String pluginName, InputStream is) throws IOException {
+public class Transform {
+    public static Transform fromInputStream(String pluginName, InputStream is) throws IOException {
         ManifestWasm wasm = ManifestWasm.fromBytes(is.readAllBytes()).build();
         Plugin plugin = Plugin.ofManifest(Manifest.ofWasms(wasm).build())
                 .build();
-        return new KafkaTransform(plugin, pluginName);
+        return new Transform(plugin, pluginName);
     }
 
     private final Plugin plugin;
     private final String pluginName;
 
-    public KafkaTransform(Plugin plugin, String pluginName) {
+    public Transform(Plugin plugin, String pluginName) {
         this.plugin = plugin;
         this.pluginName = pluginName;
     }
