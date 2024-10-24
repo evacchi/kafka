@@ -896,24 +896,7 @@ class ReplicaManager(val config: KafkaConfig,
         verificationGuards = verificationGuards
       )
 
-      val vs = entriesWithoutErrorsPerPartition.map { case (k, v) =>
-        k -> transformStore.transform(k, v)
-      }
-
-      appendRecords(
-        timeout = timeout,
-        requiredAcks = -1,
-        internalTopicsAllowed = false,
-        origin = AppendOrigin.CLIENT,
-        entriesPerPartition = vs,
-        responseCallback =  m =>
-          logger.info(s"response callback ${m}"),
-        recordValidationStatsCallback = m =>
-          logger.info(s"validation callback ${m}"),
-        requestLocal = RequestLocal.noCaching(),
-        actionQueue = actionQueue,
-        verificationGuards = Map.empty
-      )
+      scheduleDataTransform(timeout, actionQueue, entriesWithoutErrorsPerPartition)
 
     }
 
@@ -939,6 +922,34 @@ class ReplicaManager(val config: KafkaConfig,
       ),
       transactionSupportedOperation
     )
+  }
+
+  private def scheduleDataTransform(
+    timeout: Long,
+    actionQueue: ActionQueue,
+    entries: Map[TopicPartition, MemoryRecords]
+  ): Unit = {
+    actionQueue.add(() => {
+      val vs = entries.map { case (k, v) =>
+        new TopicPartition(s"${k.topic()}", 0) ->
+          transformStore.transform(k, v)
+      }
+
+      appendRecords(
+        timeout = timeout,
+        requiredAcks = -1,
+        internalTopicsAllowed = false,
+        origin = AppendOrigin.CLIENT,
+        entriesPerPartition = vs,
+        responseCallback = m =>
+          logger.info(s"response callback ${m}"),
+        recordValidationStatsCallback = m =>
+          logger.info(s"validation callback ${m}"),
+        requestLocal = RequestLocal.noCaching(),
+        actionQueue = actionQueue,
+        verificationGuards = Map.empty
+      )
+    })
   }
 
   private def buildProducePartitionStatus(
