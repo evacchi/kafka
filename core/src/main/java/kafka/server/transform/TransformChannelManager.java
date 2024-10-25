@@ -112,6 +112,7 @@ public class TransformChannelManager extends InterBrokerSendThread {
     @Override
     public Collection<RequestAndCompletionHandler> generateRequests() {
         var r = new ArrayList<RequestAndCompletionHandler>();
+
         requestQueue.drainTo(r);
         return r;
     }

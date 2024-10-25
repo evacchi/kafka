@@ -5,9 +5,6 @@ import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.json.JsonMapper;
-import kafka.cluster.Partition;
-import kafka.server.HostedPartition;
-import kafka.server.HostedPartition$;
 import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
 import kafka.server.ReplicaManager;
@@ -16,7 +13,6 @@ import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.message.MetadataResponseData;
-import org.apache.kafka.common.message.UpdateMetadataRequestData;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.SimpleRecord;
 import org.slf4j.Logger;
@@ -30,12 +26,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 public class TransformStore {
     ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -60,10 +56,10 @@ public class TransformStore {
                 .enable(MapperFeature.AUTO_DETECT_FIELDS).build();
 
         // Simulate registration of a plugin.
-        scheduler.schedule(this::delayedInit, 3, TimeUnit.SECONDS);
+//        scheduler.schedule(this::delayedInit, 3, TimeUnit.SECONDS);
     }
 
-    private void delayedInit() {
+    public void startup() {
         String pluginName = "my-first-plugin";
         String inputTopic = "test";
         String outputTopic = "test-out";
@@ -167,8 +163,7 @@ public class TransformStore {
                 Set.of(outputTopic), metadataCache, this.config);
 
         var partitions = responses.get(outputTopic).partitions();
-
-        return findNonlocalPartition(outputTopic, partitions);
+        return preferLocalPartition(outputTopic, partitions);
     }
 
     private MaybeLocalTopicPartition preferLocalPartition(String outputTopic, List<MetadataResponseData.MetadataResponsePartition> partitions) {
@@ -180,7 +175,7 @@ public class TransformStore {
                             outputTopic, localPartition.get().partitionIndex()));
         } else {
             // If no local partition is available, pick the first available nonlocal partition.
-            return findNonlocalPartition(
+            return preferNonlocalPartition(
                     outputTopic, partitions);
         }
     }
@@ -204,10 +199,10 @@ public class TransformStore {
     }
 
 
-    private MaybeLocalTopicPartition findNonlocalPartition(
+    private MaybeLocalTopicPartition preferNonlocalPartition(
             String outputTopic, List<MetadataResponseData.MetadataResponsePartition> partitions) {
 
-        int rr = ++roundRobinCount % partitions.size();
+        int rr = roundRobinCount++ % partitions.size();
         for (var part : partitions) {
             if (part.partitionIndex() != rr) {
                 continue;
@@ -252,6 +247,19 @@ public class TransformStore {
 
         public TopicPartition topicPartition() {
             return topicPartition;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof MaybeLocalTopicPartition)) return false;
+            MaybeLocalTopicPartition that = (MaybeLocalTopicPartition) o;
+            return Objects.equals(maybeNode, that.maybeNode) && Objects.equals(topicPartition, that.topicPartition);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(maybeNode, topicPartition);
         }
 
         @Override

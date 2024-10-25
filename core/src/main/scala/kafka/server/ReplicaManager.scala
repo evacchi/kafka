@@ -423,6 +423,7 @@ class ReplicaManager(val config: KafkaConfig,
     addPartitionsToTxnManager.foreach(_.start())
     remoteLogManager.foreach(rlm => rlm.setDelayedOperationPurgatory(delayedRemoteListOffsetsPurgatory))
     transformChannelManager.start()
+    transformStore.startup()
   }
 
   private def maybeRemoveTopicMetrics(topic: String): Unit = {
