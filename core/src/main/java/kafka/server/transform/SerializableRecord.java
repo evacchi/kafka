@@ -1,11 +1,14 @@
 package kafka.server.transform;
 
+import org.apache.kafka.common.record.Record;
+import org.apache.kafka.common.record.SimpleRecord;
+
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
-public class Record {
+class SerializableRecord {
 
     public transient long timestamp;
     public String topic;
@@ -13,31 +16,24 @@ public class Record {
     public ByteBuffer value;
     public List<Header> headers;
 
-    public Record() {
+    SerializableRecord() {}
+
+    public SerializableRecord(Record sr) {
+        this.timestamp = sr.timestamp();
+        this.key = sr.key();
+        this.value = sr.value();
+        this.headers = extractHeaders(sr.headers());
     }
 
-    public Record(
-            String topic,
-            ByteBuffer key,
-            ByteBuffer value,
-            long timestamp,
-            org.apache.kafka.common.header.Header[] headers) {
-        this.topic = topic;
-        this.timestamp = timestamp;
-        this.key = key;
-        this.value = value;
-        this.headers = extractHeaders(headers);
-    }
-
-    public long timestamp() {
+    long timestamp() {
         return timestamp;
     }
 
-    public ByteBuffer key() {
+    ByteBuffer key() {
         return key;
     }
 
-    public ByteBuffer value() {
+    ByteBuffer value() {
         return value;
     }
 
@@ -49,5 +45,9 @@ public class Record {
         return l;
     }
 
+    public SimpleRecord toSimpleRecord() {
+        return new SimpleRecord(
+                this.timestamp, this.key, this.value /* fixme: missing headers */);
+    }
 }
 

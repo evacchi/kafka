@@ -1,10 +1,5 @@
 package kafka.server.transform;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.MapperFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.json.JsonMapper;
 import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
 import kafka.server.ReplicaManager;
@@ -23,6 +18,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,15 +26,10 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 
 public class TransformStore {
-    ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-
     private static final Logger LOGGER = LoggerFactory.getLogger(TransformStore.class);
 
-    private final ObjectMapper mapper;
     private final ReplicaManager replicaManager;
     private final MetadataCache metadataCache;
     private final KafkaConfig config;
@@ -49,14 +40,6 @@ public class TransformStore {
         this.replicaManager = replicaManager;
         this.metadataCache = metadataCache;
         this.config = config;
-
-        mapper = JsonMapper.builder()
-                .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
-                .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-                .enable(MapperFeature.AUTO_DETECT_FIELDS).build();
-
-        // Simulate registration of a plugin.
-//        scheduler.schedule(this::delayedInit, 3, TimeUnit.SECONDS);
     }
 
     public void startup() {
@@ -118,24 +101,15 @@ public class TransformStore {
 
                 // Apply the given transform if this is registered as its input topic.
                 if (manifest.inputTopic().equals(topicPartition.topic())) {
-                    var serializableRecord = new kafka.server.transform.Record(
-                            topicPartition.topic(),
-                            in.key(),
-                            in.value(),
-                            in.timestamp(),
-                            in.headers());
-
                     // Each transform may result in multiple records
-                    var records = transf.transform(serializableRecord, mapper);
-
+                    Collection<SimpleRecord> records = transf.transform(in);
                     // For each record, create a SimpleRecord and compute a valid partition.
                     for (var out : records) {
-                        var sr = new SimpleRecord(out.timestamp(), out.key(), out.value());
                         MaybeLocalTopicPartition destTopicPartition =
-                                findPartition(transf.manifest().outputTopic(), sr);
+                                findPartition(transf.manifest().outputTopic(), out);
                         transformedRecords.computeIfAbsent(
                                 destTopicPartition,
-                                k -> new ArrayList<>()).add(sr);
+                                k -> new ArrayList<>()).add(out);
                     }
                 }
             }
