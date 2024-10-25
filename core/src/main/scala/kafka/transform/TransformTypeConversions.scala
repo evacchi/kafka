@@ -1,21 +1,16 @@
 package kafka.transform
 
-import kafka.server.{KafkaConfig, MetadataCache}
-import org.apache.kafka.common.record.MemoryRecords
+import org.apache.kafka.common.message.MetadataResponseData
 
-import java.util.Collection
 import scala.jdk.CollectionConverters._
 
 object TransformTypeConversions {
-
-  def topicsMeta(topics: Collection[String],
-                 metadataCache: MetadataCache, config: KafkaConfig) = {
-    metadataCache.getTopicMetadata(topics.asScala.toSet, config.interBrokerListenerName)
-      .map(meta => meta.name() -> meta).toMap.asJava
+  def metadataSeqToJavaMap(x: collection.Seq[MetadataResponseData.MetadataResponseTopic]) = {
+    x.map(meta => meta.name() -> meta).toMap.asJava
   }
 
-  def asScala[T](m: java.util.Map[T, MemoryRecords]) = {
-    m.asScala.toSeq
-  }
+  def asScalaSet[T](s: java.util.Set[T]) = s.asScala
+
+  def asScalaMap[T, U](m: java.util.Map[T, U]) = m.asScala
 
 }

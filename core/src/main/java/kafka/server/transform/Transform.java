@@ -7,7 +7,6 @@ import org.extism.chicory.sdk.Plugin;
 
 import java.io.IOException;
 import java.util.Collection;
-import java.util.List;
 
 public class Transform {
     public static Transform fromManifest(

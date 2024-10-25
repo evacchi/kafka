@@ -10,7 +10,11 @@ public class TransformManifest {
     private final String outputTopic;
     private final Map<String, String> config;
 
-    public TransformManifest(InputStream inputStream, String name, String inputTopic, String outputTopic, Map<String, String> config) {
+    public TransformManifest(InputStream inputStream,
+                             String name,
+                             String inputTopic,
+                             String outputTopic,
+                             Map<String, String> config) {
         this.inputStream = inputStream;
         this.name = name;
         this.inputTopic = inputTopic;

@@ -2,13 +2,13 @@ package kafka.server.transform;
 
 import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
-import kafka.server.transform.TransformStore.MaybeLocalTopicPartition;
 import org.apache.kafka.clients.ApiVersions;
 import org.apache.kafka.clients.KafkaClient;
 import org.apache.kafka.clients.ManualMetadataUpdater;
 import org.apache.kafka.clients.MetadataRecoveryStrategy;
 import org.apache.kafka.clients.NetworkClient;
 import org.apache.kafka.clients.RequestCompletionHandler;
+import org.apache.kafka.common.Node;
 import org.apache.kafka.common.Reconfigurable;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.ProduceRequestData;
@@ -29,15 +29,16 @@ import org.apache.kafka.server.util.RequestAndCompletionHandler;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingDeque;
 
-
 public class TransformChannelManager extends InterBrokerSendThread {
 
+    /**
+     * This is pretty much lifted from kafka.coordinator.transaction.TransactionMarkerChannelManager/
+     */
     public static TransformChannelManager create(
-            KafkaConfig config, Metrics metrics, MetadataCache metadataCache, Time time) {
+            KafkaConfig config, Metrics metrics, Time time) {
 
         LogContext logContext = new LogContext("transform-channel-manager");
 
@@ -84,7 +85,6 @@ public class TransformChannelManager extends InterBrokerSendThread {
                 MetadataRecoveryStrategy.NONE
         );
         return new TransformChannelManager(
-                config,
                 "transform-send-thread",
                 networkClient,
                 config.requestTimeoutMs(),
@@ -94,12 +94,15 @@ public class TransformChannelManager extends InterBrokerSendThread {
 
 
     private final LinkedBlockingDeque<RequestAndCompletionHandler> requestQueue = new LinkedBlockingDeque<>();
-    private final KafkaConfig config;
     private final Time time;
 
-    public TransformChannelManager(KafkaConfig config, String name, KafkaClient networkClient, int requestTimeoutMs, Time time, boolean isInterruptible) {
+    public TransformChannelManager(
+            String name,
+            KafkaClient networkClient,
+            int requestTimeoutMs,
+            Time time,
+            boolean isInterruptible) {
         super(name, networkClient, requestTimeoutMs, time, isInterruptible);
-        this.config = config;
         this.time = time;
     }
 
@@ -112,14 +115,12 @@ public class TransformChannelManager extends InterBrokerSendThread {
     @Override
     public Collection<RequestAndCompletionHandler> generateRequests() {
         var r = new ArrayList<RequestAndCompletionHandler>();
-
         requestQueue.drainTo(r);
         return r;
     }
 
-    public void enqueue(MaybeLocalTopicPartition tp, MemoryRecords memoryRecords) {
-        log.info("Enqueuing {}", tp.topicPartition());
-        TopicPartition topicPartition = tp.topicPartition();
+    public void enqueue(Node node, TopicPartition topicPartition, MemoryRecords memoryRecords) {
+        log.info("Enqueuing {}", topicPartition);
         ProduceRequest.Builder requestBuilder = ProduceRequest.forMagic(RecordBatch.CURRENT_MAGIC_VALUE,
                 new ProduceRequestData()
                         .setTopicData(new ProduceRequestData.TopicProduceDataCollection(Collections.singletonList(
@@ -133,7 +134,7 @@ public class TransformChannelManager extends InterBrokerSendThread {
                         .setTimeoutMs(5000));
 
         var h = new RequestAndCompletionHandler(
-                time.milliseconds(), tp.node().get(), requestBuilder, makeCompletionHandler());
+                time.milliseconds(), node, requestBuilder, makeCompletionHandler());
         requestQueue.add(h);
     }
 
