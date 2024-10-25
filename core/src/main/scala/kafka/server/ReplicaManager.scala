@@ -26,6 +26,7 @@ import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.ReplicaManager._
 import kafka.server.metadata.ZkMetadataCache
 import kafka.server.transform.TransformStore
+import kafka.transform.TransformTypeConversions
 import kafka.utils._
 import kafka.zk.KafkaZkClient
 import org.apache.kafka.common._
@@ -295,8 +296,6 @@ class ReplicaManager(val config: KafkaConfig,
                      ) extends Logging {
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
 
-  val transformStore = new TransformStore()
-
   val delayedProducePurgatory = delayedProducePurgatoryParam.getOrElse(
     DelayedOperationPurgatory[DelayedProduce](
       purgatoryName = "Produce", brokerId = config.brokerId,
@@ -338,6 +337,9 @@ class ReplicaManager(val config: KafkaConfig,
   protected val stateChangeLogger = new StateChangeLogger(localBrokerId, inControllerContext = false, None)
 
   private var logDirFailureHandler: LogDirFailureHandler = _
+
+  val transformStore = new TransformStore(metadataCache, config)
+
 
   private class LogDirFailureHandler(name: String, haltBrokerOnDirFailure: Boolean) extends ShutdownableThread(name) {
     override def doWork(): Unit = {
@@ -929,10 +931,11 @@ class ReplicaManager(val config: KafkaConfig,
     actionQueue: ActionQueue,
     entries: Map[TopicPartition, MemoryRecords]
   ): Unit = {
+
+
     actionQueue.add(() => {
-      val vs = entries.map { case (k, v) =>
-        new TopicPartition(s"${k.topic()}", 0) ->
-          transformStore.transform(k, v)
+      val vs = entries.flatMap { case (k, v) =>
+          TransformTypeConversions.asScala(transformStore.transform(k, v))
       }
 
       appendRecords(

@@ -7,28 +7,26 @@ import org.extism.chicory.sdk.ManifestWasm;
 import org.extism.chicory.sdk.Plugin;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.util.List;
 
 public class Transform {
-    public static Transform fromInputStream(String pluginName, InputStream is) throws IOException {
-        ManifestWasm wasm = ManifestWasm.fromBytes(is.readAllBytes()).build();
+    public static Transform fromManifest(
+            TransformManifest manifest) throws IOException {
+        ManifestWasm wasm = ManifestWasm.fromBytes(manifest.inputStream.readAllBytes()).build();
         Plugin plugin = Plugin.ofManifest(Manifest.ofWasms(wasm).build())
                 .build();
-        return new Transform(plugin, pluginName);
+        return new Transform(plugin, manifest);
     }
+
 
     private final Plugin plugin;
-    private final String pluginName;
+    private final TransformManifest manifest;
 
-    public Transform(Plugin plugin, String pluginName) {
+    public Transform(Plugin plugin,
+                     TransformManifest manifest) {
         this.plugin = plugin;
-        this.pluginName = pluginName;
-    }
-
-    public String name() {
-        return pluginName;
+        this.manifest = manifest;
     }
 
     public List<Record> transform(Record record, ObjectMapper mapper) {
@@ -42,6 +40,10 @@ public class Transform {
 
     public byte[] transformBytes(byte[] recordBytes) {
         return plugin.call("transform", recordBytes);
+    }
+
+    public TransformManifest manifest() {
+        return manifest;
     }
 
 }
