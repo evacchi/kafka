@@ -5,23 +5,32 @@ import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import kafka.cluster.Partition;
+import kafka.server.HostedPartition;
+import kafka.server.HostedPartition$;
 import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
+import kafka.server.ReplicaManager;
 import kafka.transform.TransformTypeConversions;
+import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.message.MetadataResponseData;
+import org.apache.kafka.common.message.UpdateMetadataRequestData;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.SimpleRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import scala.Option;
 
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
@@ -34,12 +43,14 @@ public class TransformStore {
     private static final Logger LOGGER = LoggerFactory.getLogger(TransformStore.class);
 
     private final ObjectMapper mapper;
+    private final ReplicaManager replicaManager;
     private final MetadataCache metadataCache;
     private final KafkaConfig config;
 
     private final ConcurrentLinkedQueue<Transform> ktransform = new ConcurrentLinkedQueue<>();
 
-    public TransformStore(MetadataCache metadataCache, KafkaConfig config) {
+    public TransformStore(ReplicaManager replicaManager, MetadataCache metadataCache, KafkaConfig config) {
+        this.replicaManager = replicaManager;
         this.metadataCache = metadataCache;
         this.config = config;
 
@@ -82,8 +93,12 @@ public class TransformStore {
         } else if (!responses.containsKey(outputTopic)) {
             LOGGER.error("Transform '{}': Could not find output topic '{}'. Transform will not be instantiated.", pluginName, outputTopic);
         } else {
-//            var resp = responses.get(outputTopic);
-//            resp.partitions().get(0).leaderId()
+            var resp = responses.get(outputTopic);
+            resp.partitions().get(0).leaderId();
+            for (MetadataResponseData.MetadataResponsePartition part : resp.partitions()) {
+                Option<Node> partitionLeaderEndpoint = metadataCache.getPartitionLeaderEndpoint(outputTopic, part.leaderId(), config.interBrokerListenerName());
+                LOGGER.info("Transform '{}': Partition {} Leader Endpoint = '{}'", pluginName, part.partitionIndex(), partitionLeaderEndpoint);
+            }
             try {
                 Transform transform = Transform.fromManifest(manifest);
                 ktransform.add(transform);
@@ -98,8 +113,8 @@ public class TransformStore {
     /**
      * Applies the transforms registered for the given topic to all the given records.
      */
-    public Map<TopicPartition, MemoryRecords> transform(TopicPartition topicPartition, MemoryRecords inputRecords) {
-        Map<TopicPartition, ArrayList<SimpleRecord>> transformedRecords = new HashMap<>();
+    public Map<MaybeLocalTopicPartition, MemoryRecords> transform(TopicPartition topicPartition, MemoryRecords inputRecords) {
+        Map<MaybeLocalTopicPartition, ArrayList<SimpleRecord>> transformedRecords = new HashMap<>();
 
         for (var in : inputRecords.records()) {
             for (Transform transf : ktransform) {
@@ -120,9 +135,10 @@ public class TransformStore {
                     // For each record, create a SimpleRecord and compute a valid partition.
                     for (var out : records) {
                         var sr = new SimpleRecord(out.timestamp(), out.key(), out.value());
-                        int partition = computePartition(sr);
+                        MaybeLocalTopicPartition destTopicPartition =
+                                findPartition(transf.manifest().outputTopic(), sr);
                         transformedRecords.computeIfAbsent(
-                                new TopicPartition(manifest.outputTopic(), partition),
+                                destTopicPartition,
                                 k -> new ArrayList<>()).add(sr);
                     }
                 }
@@ -130,7 +146,7 @@ public class TransformStore {
         }
 
         // Once we collect all the results, we can create one MemoryRecords for each TopicPartition
-        Map<TopicPartition, MemoryRecords> resultMap = new HashMap<>();
+        Map<MaybeLocalTopicPartition, MemoryRecords> resultMap = new HashMap<>();
         for (var pair : transformedRecords.entrySet()) {
             var results = pair.getValue();
             MemoryRecords memoryRecords = MemoryRecords.withRecords(
@@ -141,9 +157,78 @@ public class TransformStore {
         return resultMap;
     }
 
-    // TODO
-    private int computePartition(SimpleRecord sr) {
-        return 2;
+    /**
+     * Prefer a local partition for the output topic. If such a partition is not found
+     */
+    private MaybeLocalTopicPartition findPartition(String outputTopic, SimpleRecord sr) {
+        var responses = TransformTypeConversions.topicsMeta(
+                Set.of(outputTopic), metadataCache, this.config);
+
+        var partitions = responses.get(outputTopic).partitions();
+
+        var localPartition = findLocalPartition(outputTopic, partitions);
+        if (localPartition.isPresent()) {
+            return new MaybeLocalTopicPartition(
+                    Option.empty(),
+                    new TopicPartition(
+                            outputTopic, localPartition.get().partitionIndex()));
+        } else {
+            // If no local partition is available, pick the first available nonlocal partition.
+            return findNonlocalPartition(
+                    outputTopic, partitions);
+        }
+    }
+
+    private MaybeLocalTopicPartition findNonlocalPartition(
+            String outputTopic, List<MetadataResponseData.MetadataResponsePartition> partitions) {
+        for (var part : partitions) {
+            Option<Node> partitionLeaderEndpoint = metadataCache.getPartitionLeaderEndpoint(
+                    outputTopic, part.leaderId(), config.interBrokerListenerName());
+            if (partitionLeaderEndpoint.isDefined()) {
+                return new MaybeLocalTopicPartition(
+                        partitionLeaderEndpoint,
+                        new TopicPartition(outputTopic, part.partitionIndex()));
+            }
+        }
+        throw new UnsupportedOperationException("FIXME: could not find any partition for the given topic. " +
+                outputTopic + " This should have been validated earlier.");
+    }
+
+    private Optional<MetadataResponseData.MetadataResponsePartition> findLocalPartition(
+            String outputTopic, List<MetadataResponseData.MetadataResponsePartition> partitions) {
+        return partitions.stream()
+                .filter(p -> replicaManager.onlinePartition(new TopicPartition(outputTopic, p.partitionIndex())).isDefined())
+                .findFirst();
+    }
+
+    public static class MaybeLocalTopicPartition {
+        private final Option<Node> maybeNode;
+        private final TopicPartition topicPartition;
+
+        public MaybeLocalTopicPartition(Option<Node> maybeNode, TopicPartition topicPartition) {
+            this.maybeNode = maybeNode;
+            this.topicPartition = topicPartition;
+        }
+
+        public boolean isLocal() {
+            return maybeNode.isEmpty();
+        }
+
+        public Option<Node> node() {
+            return maybeNode;
+        }
+
+        public TopicPartition topicPartition() {
+            return topicPartition;
+        }
+
+        @Override
+        public String toString() {
+            return "MaybeLocalTopicPartition{" +
+                    "maybeNode=" + maybeNode +
+                    ", topicPartition=" + topicPartition +
+                    '}';
+        }
     }
 
 }

@@ -338,7 +338,7 @@ class ReplicaManager(val config: KafkaConfig,
 
   private var logDirFailureHandler: LogDirFailureHandler = _
 
-  val transformStore = new TransformStore(metadataCache, config)
+  val transformStore = new TransformStore(this, metadataCache, config)
 
 
   private class LogDirFailureHandler(name: String, haltBrokerOnDirFailure: Boolean) extends ShutdownableThread(name) {
@@ -932,26 +932,40 @@ class ReplicaManager(val config: KafkaConfig,
     entries: Map[TopicPartition, MemoryRecords]
   ): Unit = {
 
-
     actionQueue.add(() => {
-      val vs = entries.flatMap { case (k, v) =>
+      val (local, nonLocal) = entries.flatMap { case (k, v) =>
           TransformTypeConversions.asScala(transformStore.transform(k, v))
+        }.partition { case (k, v) => k.isLocal }
+
+      val localEntriesPerPartition = local.map { case (k, v) =>
+        logger.info(s"Transform for ${k.topicPartition()} ${if (k.isLocal) "is local" else "is not local"}, ${k.node()}")
+        k.topicPartition() -> v
       }
 
-      appendRecords(
-        timeout = timeout,
-        requiredAcks = -1,
-        internalTopicsAllowed = false,
-        origin = AppendOrigin.CLIENT,
-        entriesPerPartition = vs,
-        responseCallback = m =>
-          logger.info(s"response callback ${m}"),
-        recordValidationStatsCallback = m =>
-          logger.info(s"validation callback ${m}"),
-        requestLocal = RequestLocal.noCaching(),
-        actionQueue = actionQueue,
-        verificationGuards = Map.empty
-      )
+      logger.info(s"nonlocal results: ${nonLocal.keys}")
+      // TODO: KafkaNetworkChannel
+
+      if (localEntriesPerPartition.nonEmpty) {
+        appendRecords(
+          timeout = timeout,
+          requiredAcks = -1,
+          internalTopicsAllowed = false,
+          origin = AppendOrigin.CLIENT,
+          entriesPerPartition = localEntriesPerPartition,
+          responseCallback = m =>
+            logger.info(s"response callback ${m}"),
+          recordValidationStatsCallback = m =>
+            logger.info(s"validation callback ${m}"),
+          requestLocal = RequestLocal.noCaching(),
+          actionQueue = actionQueue,
+          verificationGuards = Map.empty
+        )
+      }
+
+      if (nonLocal.nonEmpty) {
+
+      }
+
     })
   }
 

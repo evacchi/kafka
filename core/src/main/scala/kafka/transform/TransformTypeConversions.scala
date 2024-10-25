@@ -1,7 +1,6 @@
 package kafka.transform
 
 import kafka.server.{KafkaConfig, MetadataCache}
-import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.record.MemoryRecords
 
 import java.util.Collection
@@ -15,7 +14,7 @@ object TransformTypeConversions {
       .map(meta => meta.name() -> meta).toMap.asJava
   }
 
-  def asScala(m: java.util.Map[TopicPartition, MemoryRecords]) = {
+  def asScala[T](m: java.util.Map[T, MemoryRecords]) = {
     m.asScala.toSeq
   }
 
