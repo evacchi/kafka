@@ -25,7 +25,7 @@ import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.ReplicaManager._
 import kafka.server.metadata.ZkMetadataCache
-import kafka.server.transform.TransformStore
+import kafka.server.transform.{TransformChannelManager, TransformStore}
 import kafka.transform.TransformTypeConversions
 import kafka.utils._
 import kafka.zk.KafkaZkClient
@@ -338,6 +338,7 @@ class ReplicaManager(val config: KafkaConfig,
 
   private var logDirFailureHandler: LogDirFailureHandler = _
 
+  val transformChannelManager = TransformChannelManager.create(config, metrics, metadataCache, time)
   val transformStore = new TransformStore(this, metadataCache, config)
 
 
@@ -421,6 +422,7 @@ class ReplicaManager(val config: KafkaConfig,
     logDirFailureHandler.start()
     addPartitionsToTxnManager.foreach(_.start())
     remoteLogManager.foreach(rlm => rlm.setDelayedOperationPurgatory(delayedRemoteListOffsetsPurgatory))
+    transformChannelManager.start()
   }
 
   private def maybeRemoveTopicMetrics(topic: String): Unit = {
@@ -943,7 +945,6 @@ class ReplicaManager(val config: KafkaConfig,
       }
 
       logger.info(s"nonlocal results: ${nonLocal.keys}")
-      // TODO: KafkaNetworkChannel
 
       if (localEntriesPerPartition.nonEmpty) {
         appendRecords(
@@ -963,8 +964,12 @@ class ReplicaManager(val config: KafkaConfig,
       }
 
       if (nonLocal.nonEmpty) {
-
+        nonLocal.foreach { case (k, v) =>
+          transformChannelManager.enqueue(k, v)
+        }
+        transformChannelManager.wakeup()
       }
+
 
     })
   }

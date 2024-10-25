@@ -157,6 +157,8 @@ public class TransformStore {
         return resultMap;
     }
 
+    int roundRobinCount = 0;
+
     /**
      * Prefer a local partition for the output topic. If such a partition is not found
      */
@@ -166,6 +168,10 @@ public class TransformStore {
 
         var partitions = responses.get(outputTopic).partitions();
 
+        return findNonlocalPartition(outputTopic, partitions);
+    }
+
+    private MaybeLocalTopicPartition preferLocalPartition(String outputTopic, List<MetadataResponseData.MetadataResponsePartition> partitions) {
         var localPartition = findLocalPartition(outputTopic, partitions);
         if (localPartition.isPresent()) {
             return new MaybeLocalTopicPartition(
@@ -179,15 +185,41 @@ public class TransformStore {
         }
     }
 
-    private MaybeLocalTopicPartition findNonlocalPartition(
-            String outputTopic, List<MetadataResponseData.MetadataResponsePartition> partitions) {
+    private MaybeLocalTopicPartition useNthPartition(
+            String outputTopic, int n, List<MetadataResponseData.MetadataResponsePartition> partitions) {
         for (var part : partitions) {
+            if (part.partitionIndex() != n) {
+                continue;
+            }
             Option<Node> partitionLeaderEndpoint = metadataCache.getPartitionLeaderEndpoint(
                     outputTopic, part.leaderId(), config.interBrokerListenerName());
             if (partitionLeaderEndpoint.isDefined()) {
                 return new MaybeLocalTopicPartition(
                         partitionLeaderEndpoint,
                         new TopicPartition(outputTopic, part.partitionIndex()));
+            }
+        }
+        throw new UnsupportedOperationException("FIXME: could not find any partition for the given topic. " +
+                outputTopic + " This should have been validated earlier.");
+    }
+
+
+    private MaybeLocalTopicPartition findNonlocalPartition(
+            String outputTopic, List<MetadataResponseData.MetadataResponsePartition> partitions) {
+
+        int rr = ++roundRobinCount % partitions.size();
+        for (var part : partitions) {
+            if (part.partitionIndex() != rr) {
+                continue;
+            }
+            Option<Node> partitionLeaderEndpoint = metadataCache.getPartitionLeaderEndpoint(
+                    outputTopic, part.leaderId(), config.interBrokerListenerName());
+            if (partitionLeaderEndpoint.isDefined()) {
+                return new MaybeLocalTopicPartition(
+                        partitionLeaderEndpoint,
+                        new TopicPartition(outputTopic, part.partitionIndex()));
+            } else {
+                return preferLocalPartition(outputTopic, partitions);
             }
         }
         throw new UnsupportedOperationException("FIXME: could not find any partition for the given topic. " +
