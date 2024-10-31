@@ -31,7 +31,8 @@ import kafka.server.QuotaFactory.QuotaManagers;
 import kafka.server.ReplicaManager;
 import kafka.server.metadata.ConfigRepository;
 import kafka.server.share.SharePartitionManager;
-
+import kafka.server.transform.ProduceRequestInterceptor;
+import kafka.server.transform.TransformManager;
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.coordinator.group.GroupCoordinator;
@@ -39,11 +40,10 @@ import org.apache.kafka.coordinator.share.ShareCoordinator;
 import org.apache.kafka.server.ClientMetricsManager;
 import org.apache.kafka.server.authorizer.Authorizer;
 import org.apache.kafka.storage.log.metrics.BrokerTopicStats;
+import scala.compat.java8.OptionConverters;
 
 import java.util.Collections;
 import java.util.Optional;
-
-import scala.compat.java8.OptionConverters;
 
 
 public class KafkaApisBuilder {
@@ -69,6 +69,7 @@ public class KafkaApisBuilder {
     private ApiVersionManager apiVersionManager = null;
     private Optional<ClientMetricsManager> clientMetricsManager = Optional.empty();
     private Optional<ShareCoordinator> shareCoordinator = Optional.empty();
+    private Optional<ProduceRequestInterceptor> produceRequestInterceptor = Optional.empty();
 
     public KafkaApisBuilder setRequestChannel(RequestChannel requestChannel) {
         this.requestChannel = requestChannel;
@@ -180,6 +181,12 @@ public class KafkaApisBuilder {
         return this;
     }
 
+    public KafkaApisBuilder setProduceRequestInterceptor(Optional<ProduceRequestInterceptor> produceRequestInterceptor) {
+        this.produceRequestInterceptor = produceRequestInterceptor;
+        return this;
+    }
+
+
     public KafkaApis build() {
         if (requestChannel == null) throw new RuntimeException("you must set requestChannel");
         if (metadataSupport == null) throw new RuntimeException("you must set metadataSupport");
@@ -218,6 +225,7 @@ public class KafkaApisBuilder {
                              time,
                              tokenManager,
                              apiVersionManager,
-                             OptionConverters.toScala(clientMetricsManager));
+                             OptionConverters.toScala(clientMetricsManager),
+                             OptionConverters.toScala(produceRequestInterceptor));
     }
 }

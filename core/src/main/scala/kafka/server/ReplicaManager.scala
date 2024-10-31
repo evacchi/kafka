@@ -25,7 +25,6 @@ import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.ReplicaManager._
 import kafka.server.metadata.ZkMetadataCache
-import kafka.server.transform.TransformManager
 import kafka.utils._
 import kafka.zk.KafkaZkClient
 import org.apache.kafka.common._
@@ -337,8 +336,6 @@ class ReplicaManager(val config: KafkaConfig,
 
   private var logDirFailureHandler: LogDirFailureHandler = _
 
-  val transformStore = new TransformManager(this, metadataCache, config, metrics, time)
-
   private class LogDirFailureHandler(name: String, haltBrokerOnDirFailure: Boolean) extends ShutdownableThread(name) {
     override def doWork(): Unit = {
       val newOfflineLogDir = logDirFailureChannel.takeNextOfflineLogDir()
@@ -419,7 +416,6 @@ class ReplicaManager(val config: KafkaConfig,
     logDirFailureHandler.start()
     addPartitionsToTxnManager.foreach(_.start())
     remoteLogManager.foreach(rlm => rlm.setDelayedOperationPurgatory(delayedRemoteListOffsetsPurgatory))
-    transformStore.start()
   }
 
   private def maybeRemoveTopicMetrics(topic: String): Unit = {
@@ -897,8 +893,6 @@ class ReplicaManager(val config: KafkaConfig,
         verificationGuards = verificationGuards
       )
 
-      scheduleDataTransform(timeout, actionQueue, entriesWithoutErrorsPerPartition)
-
     }
 
     if (transactionalProducerInfo.size < 1) {
@@ -923,18 +917,6 @@ class ReplicaManager(val config: KafkaConfig,
       ),
       transactionSupportedOperation
     )
-  }
-
-  private def scheduleDataTransform(
-    timeout: Long,
-    actionQueue: ActionQueue,
-    entries: Map[TopicPartition, MemoryRecords]
-  ): Unit = {
-
-    import scala.jdk.CollectionConverters._
-    actionQueue.add(() => {
-      transformStore.transformBatch(entries.asJava, timeout, actionQueue)
-    })
   }
 
   private def buildProducePartitionStatus(

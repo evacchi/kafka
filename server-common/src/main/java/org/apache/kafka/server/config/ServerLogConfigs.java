@@ -186,6 +186,11 @@ public class ServerLogConfigs {
             "with <code>UNSUPPORTED_VERSION</code> error for consume requests from such older clients. This configuration" +
             "does not apply to any message format conversion that might be required for replication to followers.";
 
+    public static final String PRODUCE_REQUEST_INTERCEPTOR_CLASS_NAME_CONFIG = "produce.request.interceptor.class.name";
+    public static final String PRODUCE_REQUEST_INTERCEPTOR_CLASS_NAME_DOC = "The produce request interceptor that should be used to intercept ProduceRequests. The class should " +
+            "implement the <code>kafka.server.transform.ProduceRequestInterceptor</code> interface.";
+
+
     public static final String LOG_INITIAL_TASK_DELAY_MS_CONFIG = LOG_PREFIX + "initial.task.delay.ms";
     public static final long LOG_INITIAL_TASK_DELAY_MS_DEFAULT = 30 * 1000L;
     public static final String LOG_INITIAL_TASK_DELAY_MS_DOC = "The initial task delay in millisecond when initializing " +

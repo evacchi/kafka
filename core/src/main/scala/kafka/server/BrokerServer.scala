@@ -24,8 +24,9 @@ import kafka.log.LogManager
 import kafka.log.remote.RemoteLogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
-import kafka.server.metadata.{AclPublisher, BrokerMetadataPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, ScramPublisher}
+import kafka.server.metadata._
 import kafka.server.share.SharePartitionManager
+import kafka.server.transform.ProduceRequestInterceptor
 import kafka.utils.CoreUtils
 import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
@@ -43,17 +44,18 @@ import org.apache.kafka.coordinator.share.{ShareCoordinator, ShareCoordinatorRec
 import org.apache.kafka.image.publisher.{BrokerRegistrationTracker, MetadataPublisher}
 import org.apache.kafka.metadata.{BrokerState, ListenerInfo}
 import org.apache.kafka.security.CredentialProvider
-import org.apache.kafka.server.{AssignmentsManager, BrokerFeatures, ClientMetricsManager, NodeToControllerChannelManager}
 import org.apache.kafka.server.authorizer.Authorizer
 import org.apache.kafka.server.common.{ApiMessageAndVersion, DirectoryEventHandler, TopicIdPartition}
 import org.apache.kafka.server.config.ConfigType
-import org.apache.kafka.server.share.persister.{NoOpShareStatePersister, Persister}
+import org.apache.kafka.server.config.ServerLogConfigs.PRODUCE_REQUEST_INTERCEPTOR_CLASS_NAME_CONFIG
 import org.apache.kafka.server.log.remote.storage.RemoteLogManagerConfig
 import org.apache.kafka.server.metrics.{ClientMetricsReceiverPlugin, KafkaYammerMetrics}
 import org.apache.kafka.server.network.{EndpointReadyFutures, KafkaAuthorizerServerInfo}
+import org.apache.kafka.server.share.persister.{NoOpShareStatePersister, Persister}
 import org.apache.kafka.server.share.session.ShareSessionCache
 import org.apache.kafka.server.util.timer.{SystemTimer, SystemTimerReaper}
 import org.apache.kafka.server.util.{Deadline, FutureUtils, KafkaScheduler}
+import org.apache.kafka.server.{AssignmentsManager, BrokerFeatures, ClientMetricsManager, NodeToControllerChannelManager}
 import org.apache.kafka.storage.internals.log.LogDirFailureChannel
 import org.apache.kafka.storage.log.metrics.BrokerTopicStats
 
@@ -158,6 +160,8 @@ class BrokerServer(
   val metadataPublishers: util.List[MetadataPublisher] = new util.ArrayList[MetadataPublisher]()
 
   var clientMetricsManager: ClientMetricsManager = _
+
+  var produceRequestInterceptor: ProduceRequestInterceptor = _
 
   var sharePartitionManager: SharePartitionManager = _
 
@@ -439,6 +443,9 @@ class BrokerServer(
         new Metrics()
       )
 
+      produceRequestInterceptor = config.
+        getConfiguredInstance(PRODUCE_REQUEST_INTERCEPTOR_CLASS_NAME_CONFIG, classOf[ProduceRequestInterceptor])
+
       // Create the request processor objects.
       val raftSupport = RaftSupport(forwardingManager, metadataCache)
       dataPlaneRequestProcessor = new KafkaApis(
@@ -463,7 +470,8 @@ class BrokerServer(
         time = time,
         tokenManager = tokenManager,
         apiVersionManager = apiVersionManager,
-        clientMetricsManager = Some(clientMetricsManager))
+        clientMetricsManager = Some(clientMetricsManager),
+        produceRequestInterceptor = Option(produceRequestInterceptor))
 
       dataPlaneRequestHandlerPool = new KafkaRequestHandlerPool(config.nodeId,
         socketServer.dataPlaneRequestChannel, dataPlaneRequestProcessor, time,
