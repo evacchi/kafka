@@ -11,17 +11,26 @@ import org.slf4j.LoggerFactory;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class TransformManager implements ProduceRequestInterceptor{
     private static final Logger LOGGER = LoggerFactory.getLogger(TransformManager.class);
 
     private final ConcurrentLinkedQueue<Transform> ktransform = new ConcurrentLinkedQueue<>();
+    private final ExecutorService executorService = Executors.newCachedThreadPool();
 
     public TransformManager() {}
 
@@ -47,7 +56,7 @@ public class TransformManager implements ProduceRequestInterceptor{
         String pluginName = manifest.name();
 
         try {
-            Transform transform = Transform.fromManifest(manifest);
+            Transform transform = Transform.fromManifest(manifest, executorService);
             ktransform.add(transform);
             LOGGER.info("Transform '{}': Successfully initialized.", pluginName);
         } catch (IOException e) {
@@ -65,11 +74,16 @@ public class TransformManager implements ProduceRequestInterceptor{
                 for (var batch : mr.batches()) {
                     for (var record : batch) {
                         for (Transform transf : ktransform) {
-                            Collection<SimpleRecord> srr = transf.tra   nsform(record);
-                            if (!srr.isEmpty()) {
-                                pending.computeIfAbsent(
-                                        transf.manifest().outputTopic(),
-                                        k -> new ArrayList<>()).addAll(srr);
+                            try {
+                                Collection<SimpleRecord> result = transf.transform(record,
+                                        Duration.of(1, ChronoUnit.MILLIS));
+                                if (!result.isEmpty()) {
+                                    pending.computeIfAbsent(
+                                            transf.manifest().outputTopic(),
+                                            k -> new ArrayList<>()).addAll(result);
+                                }
+                            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                                LOGGER.warn("An error was thrown while performing the transform", e);
                             }
                         }
                     }
@@ -97,7 +111,7 @@ public class TransformManager implements ProduceRequestInterceptor{
 
     @Override
     public void close() throws Exception {
-
+        executorService.close();
     }
 
 }
