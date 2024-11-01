@@ -26,7 +26,6 @@ public class TransformManager implements ProduceRequestInterceptor {
     private static final Logger LOGGER = LoggerFactory.getLogger(TransformManager.class);
 
     private final ConcurrentLinkedQueue<Transform> ktransform = new ConcurrentLinkedQueue<>();
-    private final ExecutorService executorService = Executors.newSingleThreadExecutor();
 
     public TransformManager() {
     }
@@ -62,20 +61,16 @@ public class TransformManager implements ProduceRequestInterceptor {
     }
 
     @Override
-    public CompletionStage<Collection<? extends Record>> intercept(Record record) {
-        return CompletableFuture.supplyAsync(() -> {
-            var results = new ArrayList<Record>();
-            for (Transform transform : ktransform) {
-                results.addAll(transform.transform(record));
-            }
-            return results;
-        });
+    public Collection<? extends Record> intercept(Record record) {
+        var results = new ArrayList<Record>();
+        for (Transform transform : ktransform) {
+            results.addAll(transform.transform(record));
+        }
+        return results;
     }
 
 
     @Override
-    public void close() throws Exception {
-        executorService.close();
-    }
+    public void close() throws Exception {}
 
 }

@@ -615,8 +615,7 @@ class KafkaApis(val requestChannel: RequestChannel,
    */
   def handleProduceRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     val produceRequest = request.body[ProduceRequest]
-
-    produceRequestInterceptorManager.foreach(t => t.intercept(produceRequest))
+    produceRequestInterceptorManager.map(t => t.intercept(produceRequest))
 
     if (RequestUtils.hasTransactionalRecords(produceRequest)) {
       val isAuthorizedTransactional = produceRequest.transactionalId != null &&

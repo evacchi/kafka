@@ -6,7 +6,6 @@ import org.apache.kafka.common.header.Header;
 
 import java.nio.ByteBuffer;
 import java.util.Collection;
-import java.util.concurrent.Future;
 
 public interface ProduceRequestInterceptor extends Configurable, AutoCloseable {
     interface Record {
@@ -44,5 +43,5 @@ public interface ProduceRequestInterceptor extends Configurable, AutoCloseable {
         }
     }
 
-    Future<Collection<? extends Record>> intercept(Record record);
+    Collection<? extends Record> intercept(Record record);
 }
