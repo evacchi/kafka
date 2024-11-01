@@ -17,7 +17,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 class ProduceRequestInterceptorManager_ implements AutoCloseable {
-    private static final Logger LOGGER = LoggerFactory.getLogger(ProduceRequestInterceptorManager.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ProduceRequestInterceptorManager_.class);
     private final ProduceRequestInterceptor interceptor;
 
     public ProduceRequestInterceptorManager_(ProduceRequestInterceptor interceptor) {

@@ -4,7 +4,7 @@ import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.compress.Compression
 import org.apache.kafka.common.record.{MemoryRecords, SimpleRecord}
 
-import java.util.concurrent.{ConcurrentLinkedQueue, Executors}
+import java.util.concurrent.{ConcurrentLinkedQueue, Executors, TimeUnit}
 import scala.collection.immutable
 import scala.jdk.CollectionConverters.IterableHasAsScala
 
@@ -14,15 +14,25 @@ class ProduceRequestInterceptorManager(interceptor: ProduceRequestInterceptor) {
     val results = new ConcurrentLinkedQueue[ProduceRequestInterceptor.Record]()
 
     try {
-      request.toSeq.flatMap { case (tp, records) =>
-        records.records().asScala
-          .flatMap(r => interceptor.intercept(new RecordImpl(tp.topic(), tp.partition(), r)).asScala)
-          .map(r => r.topicPartition() -> Conversions.asSimpleRecord(r))
-          .groupBy { case (tp, records) => tp }
-          .map { case (tp, coll) => tp ->
-            MemoryRecords.withRecords(Compression.NONE, coll.map { case (k, v) => v }.toArray[SimpleRecord]: _*)
-          }
-      }.toMap
+      for (
+        (tp,v) <- request;
+        r <- v.records().asScala) {
+        svc.submit({ () =>
+          val records = interceptor.intercept(new RecordImpl(tp, r))
+          results.addAll(records)
+        }: Runnable)
+      }
+
+      svc.shutdown()
+      svc.awaitTermination(1, TimeUnit.SECONDS)
+
+      results.asScala
+      .map(r => r.topicPartition() -> Conversions.asSimpleRecord(r))
+      .groupBy { case (tp, _) => tp }
+      .map { case (tp, coll) => tp ->
+        MemoryRecords.withRecords(Compression.NONE,
+          coll.map { case (k, v) => v }.toArray[SimpleRecord]: _*)
+      }
     } finally {
       svc.shutdown();
     }

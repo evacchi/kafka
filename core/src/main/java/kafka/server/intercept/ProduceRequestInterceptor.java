@@ -37,11 +37,5 @@ public interface ProduceRequestInterceptor extends Configurable, AutoCloseable {
 
     }
 
-    class InterceptTimeoutException extends Exception {
-        public InterceptTimeoutException(String message, Throwable cause) {
-            super(message, cause);
-        }
-    }
-
     Collection<? extends Record> intercept(Record record);
 }

@@ -21,6 +21,13 @@ public class RecordImpl implements ProduceRequestInterceptor.Record {
         this.headers = original.headers();
     }
 
+    RecordImpl(TopicPartition topicPartition, Record original) {
+        this.topicPartition = topicPartition;
+        this.timestamp = original.timestamp();
+        this.key = original.key();
+        this.value = original.value();
+        this.headers = original.headers();
+    }
 
     @Override
     public TopicPartition topicPartition() {
