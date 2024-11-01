@@ -1,5 +1,6 @@
-package kafka.server.transform;
+package kafka.server.intercept.transform;
 
+import kafka.server.intercept.ProduceRequestInterceptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -9,12 +10,17 @@ import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 
 public class TransformManager implements ProduceRequestInterceptor {
     private static final Logger LOGGER = LoggerFactory.getLogger(TransformManager.class);
@@ -47,7 +53,7 @@ public class TransformManager implements ProduceRequestInterceptor {
         String pluginName = manifest.name();
 
         try {
-            Transform transform = Transform.fromManifest(manifest, executorService);
+            Transform transform = Transform.fromManifest(manifest);
             ktransform.add(transform);
             LOGGER.info("Transform '{}': Successfully initialized.", pluginName);
         } catch (IOException e) {
@@ -56,16 +62,14 @@ public class TransformManager implements ProduceRequestInterceptor {
     }
 
     @Override
-    public Collection<? extends Record> intercept(Record record, Duration timeout) throws InterceptTimeoutException {
-        ArrayList<Record> records = new ArrayList<Record>();
-        for (Transform transf : ktransform) {
-            try {
-                records.addAll(transf.transform(record, timeout));
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                throw new InterceptTimeoutException("Transform exceeded timeout", e);
+    public CompletionStage<Collection<? extends Record>> intercept(Record record) {
+        return CompletableFuture.supplyAsync(() -> {
+            var results = new ArrayList<Record>();
+            for (Transform transform : ktransform) {
+                results.addAll(transform.transform(record));
             }
-        }
-        return records;
+            return results;
+        });
     }
 
 

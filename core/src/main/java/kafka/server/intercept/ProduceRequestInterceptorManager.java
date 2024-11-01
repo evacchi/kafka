@@ -1,4 +1,4 @@
-package kafka.server.transform;
+package kafka.server.intercept;
 
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.compress.Compression;
@@ -9,51 +9,61 @@ import org.apache.kafka.common.requests.ProduceRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 public class ProduceRequestInterceptorManager implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ProduceRequestInterceptorManager.class);
     private final ProduceRequestInterceptor interceptor;
-    private Duration timeout;
 
     public ProduceRequestInterceptorManager(ProduceRequestInterceptor interceptor) {
         this.interceptor = interceptor;
-        this.timeout = Duration.of(100, ChronoUnit.MILLIS);
     }
 
     public void intercept(ProduceRequest request) {
-        var pending = new HashMap<TopicPartition, ArrayList<SimpleRecord>>();
+        var futureResults = new ArrayList<Future<Collection<? extends ProduceRequestInterceptor.Record>>>();
 
         ProduceRequestData.TopicProduceDataCollection topicProduceData = request.data().topicData();
         for (ProduceRequestData.TopicProduceData tpd : topicProduceData) {
             for (ProduceRequestData.PartitionProduceData ppd : tpd.partitionData()) {
                 MemoryRecords mr = (MemoryRecords) ppd.records();
                 for (var record : mr.records()) {
-                    try {
-                        Collection<? extends ProduceRequestInterceptor.Record> results =
-                                interceptor.intercept(
-                                        new RecordProxy(tpd.name(), ppd.index(), record), timeout);
+                    var future =
+                            interceptor.intercept(
+                                    new RecordImpl(tpd.name(), ppd.index(), record));
 
-                        results.forEach(r -> LOGGER.info(r.topicPartition().toString()));
-
-                        if (!results.isEmpty()) {
-                            for (ProduceRequestInterceptor.Record result : results) {
-                                ArrayList<SimpleRecord> collector = pending.computeIfAbsent(
-                                        result.topicPartition(), k -> new ArrayList<>());
-                                collector.add(Conversions.asSimpleRecord(result));
-                            }
-                        }
-                    } catch (ProduceRequestInterceptor.InterceptTimeoutException e) {
-                        LOGGER.warn("Interceptor failed. Batch skipped.", e);
-                    }
+                    futureResults.add(future);
                 }
             }
         }
+
+
+
+        var pending = new HashMap<TopicPartition, ArrayList<SimpleRecord>>();
+        for (var future : futureResults) {
+            try {
+            Collection<? extends ProduceRequestInterceptor.Record> result = future.get();
+                pending.computeIfAbsent(
+                                result.topicPartition(), k -> new ArrayList<>())
+                        .add(Conversions.asSimpleRecord(result));
+
+            } catch (InterruptedException | ExecutionException e) {
+                LOGGER.warn("Execution timed out, skipping result.", e);
+            }
+        }
+
+
+        var tpd = mergeTopicProduceData(topicProduceData, pending);
+        request.data().setTopicData(tpd);
+    }
+
+    private ProduceRequestData.TopicProduceDataCollection mergeTopicProduceData(
+            ProduceRequestData.TopicProduceDataCollection topicProduceData,
+            HashMap<TopicPartition, ArrayList<SimpleRecord>> pending) {
 
         var tpd = new ProduceRequestData.TopicProduceDataCollection(
                 topicProduceData.size() + pending.size());
@@ -73,7 +83,7 @@ public class ProduceRequestInterceptorManager implements AutoCloseable {
                                             Compression.NONE,
                                             kv.getValue().toArray(SimpleRecord[]::new))))));
         }
-        request.data().setTopicData(tpd);
+        return tpd;
     }
 
 

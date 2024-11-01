@@ -1,6 +1,6 @@
-package kafka.server.transform;
+package kafka.server.intercept.transform;
 
-import org.apache.kafka.common.record.SimpleRecord;
+import kafka.server.intercept.ProduceRequestInterceptor;
 import org.extism.chicory.sdk.Manifest;
 import org.extism.chicory.sdk.ManifestWasm;
 import org.extism.chicory.sdk.Plugin;
@@ -8,38 +8,29 @@ import org.extism.chicory.sdk.Plugin;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Collection;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public class Transform {
-    public static Transform fromManifest(
-            TransformManifest manifest, ExecutorService executorService) throws IOException {
+    public static Transform fromManifest(TransformManifest manifest) throws IOException {
         ManifestWasm wasm = ManifestWasm.fromBytes(
                 manifest.inputStream.readAllBytes()).build();
         Plugin plugin = Plugin.ofManifest(Manifest.ofWasms(wasm).build())
                 .build();
-        return new Transform(plugin, manifest, executorService);
+        return new Transform(plugin, manifest);
     }
 
     private final Plugin plugin;
     private final TransformManifest manifest;
-    private final ExecutorService executorService;
 
     public Transform(Plugin plugin,
-                     TransformManifest manifest,
-                     ExecutorService executorService) {
+                     TransformManifest manifest) {
         this.plugin = plugin;
         this.manifest = manifest;
-        this.executorService = executorService;
-    }
-
-    public Collection<? extends ProduceRequestInterceptor.Record> transform(ProduceRequestInterceptor.Record record, Duration duration)
-            throws ExecutionException, InterruptedException, TimeoutException {
-        Future<Collection<? extends ProduceRequestInterceptor.Record>> result = executorService.submit(() -> transform(record));
-        return result.get(duration.toNanos(), TimeUnit.NANOSECONDS);
     }
 
     public Collection<? extends ProduceRequestInterceptor.Record> transform(ProduceRequestInterceptor.Record record) {

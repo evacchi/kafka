@@ -1,12 +1,12 @@
-package kafka.server.transform;
+package kafka.server.intercept;
 
 import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.Header;
 
 import java.nio.ByteBuffer;
-import java.time.Duration;
 import java.util.Collection;
+import java.util.concurrent.Future;
 
 public interface ProduceRequestInterceptor extends Configurable, AutoCloseable {
     interface Record {
@@ -44,5 +44,5 @@ public interface ProduceRequestInterceptor extends Configurable, AutoCloseable {
         }
     }
 
-    Collection<? extends Record> intercept(Record record, Duration duration) throws InterceptTimeoutException;
+    Future<Collection<? extends Record>> intercept(Record record);
 }
