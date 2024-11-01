@@ -33,6 +33,8 @@ import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
 import kafka.server.QuotaFactory.QuotaManagers;
 import kafka.server.ReplicaManager;
+import kafka.server.intercept.ProduceRequestInterceptor;
+import kafka.server.intercept.ProduceRequestInterceptorManager;
 import kafka.zk.KafkaZkClient;
 
 import org.apache.kafka.common.metrics.Metrics;
@@ -73,6 +75,7 @@ public class ReplicaManagerBuilder {
     private Long brokerEpoch = -1L;
     private Optional<AddPartitionsToTxnManager> addPartitionsToTxnManager = Optional.empty();
     private DirectoryEventHandler directoryEventHandler = DirectoryEventHandler.NOOP;
+    private Optional<ProduceRequestInterceptor> produceRequestInterceptor = Optional.empty();
 
     public ReplicaManagerBuilder setConfig(KafkaConfig config) {
         this.config = config;
@@ -184,6 +187,12 @@ public class ReplicaManagerBuilder {
         return this;
     }
 
+    public ReplicaManagerBuilder setProduceRequestInterceptor(ProduceRequestInterceptor produceRequestInterceptor) {
+        this.produceRequestInterceptor = Optional.of(produceRequestInterceptor);
+        return this;
+    }
+
+
     public ReplicaManager build() {
         if (config == null) config = new KafkaConfig(Collections.emptyMap());
         if (logManager == null) throw new RuntimeException("You must set logManager");
@@ -196,28 +205,30 @@ public class ReplicaManagerBuilder {
         // its initialization and creation of ReplicaManager.
         if (metrics == null) metrics = new Metrics();
         return new ReplicaManager(config,
-                             metrics,
-                             time,
-                             scheduler,
-                             logManager,
-                             OptionConverters.toScala(remoteLogManager),
-                             quotaManagers,
-                             metadataCache,
-                             logDirFailureChannel,
-                             alterPartitionManager,
-                             brokerTopicStats,
-                             isShuttingDown,
-                             OptionConverters.toScala(zkClient),
-                             OptionConverters.toScala(delayedProducePurgatory),
-                             OptionConverters.toScala(delayedFetchPurgatory),
-                             OptionConverters.toScala(delayedDeleteRecordsPurgatory),
-                             OptionConverters.toScala(delayedElectLeaderPurgatory),
-                             OptionConverters.toScala(delayedRemoteFetchPurgatory),
-                             OptionConverters.toScala(delayedRemoteListOffsetsPurgatory),
-                             OptionConverters.toScala(threadNamePrefix),
-                             () -> brokerEpoch,
-                             OptionConverters.toScala(addPartitionsToTxnManager),
-                             directoryEventHandler,
-                             new DelayedActionQueue());
+                metrics,
+                time,
+                scheduler,
+                logManager,
+                OptionConverters.toScala(remoteLogManager),
+                quotaManagers,
+                metadataCache,
+                logDirFailureChannel,
+                alterPartitionManager,
+                brokerTopicStats,
+                isShuttingDown,
+                OptionConverters.toScala(zkClient),
+                OptionConverters.toScala(delayedProducePurgatory),
+                OptionConverters.toScala(delayedFetchPurgatory),
+                OptionConverters.toScala(delayedDeleteRecordsPurgatory),
+                OptionConverters.toScala(delayedElectLeaderPurgatory),
+                OptionConverters.toScala(delayedRemoteFetchPurgatory),
+                OptionConverters.toScala(delayedRemoteListOffsetsPurgatory),
+                OptionConverters.toScala(threadNamePrefix),
+                () -> brokerEpoch,
+                OptionConverters.toScala(addPartitionsToTxnManager),
+                directoryEventHandler,
+                new DelayedActionQueue(),
+                OptionConverters.toScala(produceRequestInterceptor.map(ProduceRequestInterceptorManager::new))
+        );
     }
 }

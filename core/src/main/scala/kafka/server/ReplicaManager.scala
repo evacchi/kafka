@@ -895,6 +895,23 @@ class ReplicaManager(val config: KafkaConfig,
         verificationGuards = verificationGuards
       )
 
+      produceRequestInterceptorManager.foreach{ m =>
+        val result = m.intercept(entriesWithoutErrorsPerPartition)
+        appendRecords(
+          timeout = timeout,
+          requiredAcks = requiredAcks,
+          internalTopicsAllowed = false,
+          origin = AppendOrigin.CLIENT,
+          entriesPerPartition = result,
+          responseCallback = (m) => {},
+          recordValidationStatsCallback = (m) => {},
+          requestLocal = newRequestLocal,
+          actionQueue = actionQueue,
+          verificationGuards = verificationGuards
+        )
+
+      }
+
     }
 
     if (transactionalProducerInfo.size < 1) {

@@ -16,11 +16,11 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-public class ProduceRequestInterceptorManager implements AutoCloseable {
+class ProduceRequestInterceptorManager_ implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ProduceRequestInterceptorManager.class);
     private final ProduceRequestInterceptor interceptor;
 
-    public ProduceRequestInterceptorManager(ProduceRequestInterceptor interceptor) {
+    public ProduceRequestInterceptorManager_(ProduceRequestInterceptor interceptor) {
         this.interceptor = interceptor;
     }
 
