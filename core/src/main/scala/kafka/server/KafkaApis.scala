@@ -24,7 +24,7 @@ import kafka.server.QuotaFactory.{QuotaManagers, UnboundedQuota}
 import kafka.server.handlers.DescribeTopicPartitionsRequestHandler
 import kafka.server.metadata.{ConfigRepository, KRaftMetadataCache}
 import kafka.server.share.SharePartitionManager
-import kafka.server.transform.ProduceRequestInterceptor
+import kafka.server.transform.ProduceRequestInterceptorManager
 import kafka.utils.{CoreUtils, Logging}
 import org.apache.kafka.admin.AdminUtils
 import org.apache.kafka.clients.CommonClientConfigs
@@ -120,7 +120,7 @@ class KafkaApis(val requestChannel: RequestChannel,
                 val tokenManager: DelegationTokenManager,
                 val apiVersionManager: ApiVersionManager,
                 val clientMetricsManager: Option[ClientMetricsManager],
-                val produceRequestInterceptor: Option[ProduceRequestInterceptor]
+                val produceRequestInterceptorManager: Option[ProduceRequestInterceptorManager]
 ) extends ApiRequestHandler with Logging {
 
   type FetchResponseStats = Map[TopicPartition, RecordValidationStats]
@@ -616,7 +616,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   def handleProduceRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     val produceRequest = request.body[ProduceRequest]
 
-    produceRequestInterceptor.foreach(t => t.intercept(produceRequest))
+    produceRequestInterceptorManager.foreach(t => t.intercept(produceRequest))
 
     if (RequestUtils.hasTransactionalRecords(produceRequest)) {
       val isAuthorizedTransactional = produceRequest.transactionalId != null &&

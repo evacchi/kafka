@@ -36,16 +36,16 @@ public class Transform {
         this.executorService = executorService;
     }
 
-    public Collection<SimpleRecord> transform(org.apache.kafka.common.record.Record record, Duration duration)
+    public Collection<? extends ProduceRequestInterceptor.Record> transform(ProduceRequestInterceptor.Record record, Duration duration)
             throws ExecutionException, InterruptedException, TimeoutException {
-        Future<Collection<SimpleRecord>> result = executorService.submit(() -> transform(record));
+        Future<Collection<? extends ProduceRequestInterceptor.Record>> result = executorService.submit(() -> transform(record));
         return result.get(duration.toNanos(), TimeUnit.NANOSECONDS);
     }
 
-    public Collection<SimpleRecord> transform(org.apache.kafka.common.record.Record record) {
+    public Collection<? extends ProduceRequestInterceptor.Record> transform(ProduceRequestInterceptor.Record record) {
         byte[] in = InternalMapper.asBytes(record);
         byte[] out = transformBytes(in);
-        return InternalMapper.fromBytes(out);
+        return InternalMapper.fromBytes(manifest.outputTopic(), out);
     }
 
     public byte[] transformBytes(byte[] recordBytes) {

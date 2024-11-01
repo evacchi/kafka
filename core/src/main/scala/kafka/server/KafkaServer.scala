@@ -601,7 +601,7 @@ class KafkaServer(
           tokenManager = tokenManager,
           apiVersionManager = apiVersionManager,
           clientMetricsManager = None,
-          produceRequestInterceptor = None)
+          produceRequestInterceptorManager = None)
 
         dataPlaneRequestProcessor = createKafkaApis(socketServer.dataPlaneRequestChannel)
 

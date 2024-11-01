@@ -26,7 +26,7 @@ import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.server.metadata._
 import kafka.server.share.SharePartitionManager
-import kafka.server.transform.ProduceRequestInterceptor
+import kafka.server.transform.{ProduceRequestInterceptor, ProduceRequestInterceptorManager}
 import kafka.utils.CoreUtils
 import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
@@ -471,7 +471,7 @@ class BrokerServer(
         tokenManager = tokenManager,
         apiVersionManager = apiVersionManager,
         clientMetricsManager = Some(clientMetricsManager),
-        produceRequestInterceptor = Option(produceRequestInterceptor))
+        produceRequestInterceptorManager = Option(produceRequestInterceptor).map(new ProduceRequestInterceptorManager(_)))
 
       dataPlaneRequestHandlerPool = new KafkaRequestHandlerPool(config.nodeId,
         socketServer.dataPlaneRequestChannel, dataPlaneRequestProcessor, time,

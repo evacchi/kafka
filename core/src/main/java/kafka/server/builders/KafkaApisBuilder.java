@@ -32,6 +32,7 @@ import kafka.server.ReplicaManager;
 import kafka.server.metadata.ConfigRepository;
 import kafka.server.share.SharePartitionManager;
 import kafka.server.transform.ProduceRequestInterceptor;
+import kafka.server.transform.ProduceRequestInterceptorManager;
 import kafka.server.transform.TransformManager;
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.utils.Time;
@@ -226,6 +227,7 @@ public class KafkaApisBuilder {
                              tokenManager,
                              apiVersionManager,
                              OptionConverters.toScala(clientMetricsManager),
-                             OptionConverters.toScala(produceRequestInterceptor));
+                             OptionConverters.toScala(produceRequestInterceptor)
+                                     .map(ProduceRequestInterceptorManager::new));
     }
 }
