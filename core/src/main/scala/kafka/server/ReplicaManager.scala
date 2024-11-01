@@ -895,6 +895,7 @@ class ReplicaManager(val config: KafkaConfig,
         verificationGuards = verificationGuards
       )
 
+      // Append records if there is an interceptor.
       produceRequestInterceptorManager.foreach{ m =>
         val result = m.intercept(entriesWithoutErrorsPerPartition)
         appendRecords(
@@ -904,12 +905,7 @@ class ReplicaManager(val config: KafkaConfig,
           origin = AppendOrigin.CLIENT,
           entriesPerPartition = result,
           responseCallback = (m) => {},
-          recordValidationStatsCallback = (m) => {},
-          requestLocal = newRequestLocal,
-          actionQueue = actionQueue,
-          verificationGuards = verificationGuards
         )
-
       }
 
     }
