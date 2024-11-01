@@ -24,6 +24,7 @@ import kafka.log.{LogManager, OffsetResultHolder, UnifiedLog}
 import kafka.server.HostedPartition.Online
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.ReplicaManager._
+import kafka.server.intercept.ProduceRequestInterceptorManager
 import kafka.server.metadata.ZkMetadataCache
 import kafka.utils._
 import kafka.zk.KafkaZkClient
@@ -290,7 +291,8 @@ class ReplicaManager(val config: KafkaConfig,
                      val brokerEpochSupplier: () => Long = () => -1,
                      addPartitionsToTxnManager: Option[AddPartitionsToTxnManager] = None,
                      val directoryEventHandler: DirectoryEventHandler = DirectoryEventHandler.NOOP,
-                     val defaultActionQueue: ActionQueue = new DelayedActionQueue
+                     val defaultActionQueue: ActionQueue = new DelayedActionQueue,
+                     val produceRequestInterceptorManager: Option[ProduceRequestInterceptorManager] = None
                      ) extends Logging {
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
 

@@ -161,7 +161,7 @@ class BrokerServer(
 
   var clientMetricsManager: ClientMetricsManager = _
 
-  var produceRequestInterceptor: ProduceRequestInterceptor = _
+  var produceRequestInterceptorManager: Option[ProduceRequestInterceptorManager] = None
 
   var sharePartitionManager: SharePartitionManager = _
 
@@ -326,6 +326,10 @@ class BrokerServer(
           lifecycleManager.propagateDirectoryFailure(directoryId, config.logDirFailureTimeoutMs)
       }
 
+      produceRequestInterceptorManager = Option(config.
+        getConfiguredInstance(PRODUCE_REQUEST_INTERCEPTOR_CLASS_NAME_CONFIG, classOf[ProduceRequestInterceptor]))
+        .map(new ProduceRequestInterceptorManager(_))
+
       /**
        * TODO: move this action queue to handle thread so we can simplify concurrency handling
        */
@@ -350,7 +354,8 @@ class BrokerServer(
         brokerEpochSupplier = () => lifecycleManager.brokerEpoch,
         addPartitionsToTxnManager = Some(addPartitionsToTxnManager),
         directoryEventHandler = directoryEventHandler,
-        defaultActionQueue = defaultActionQueue
+        defaultActionQueue = defaultActionQueue,
+        produceRequestInterceptorManager = produceRequestInterceptorManager
       )
 
       /* start token manager */
@@ -443,9 +448,6 @@ class BrokerServer(
         new Metrics()
       )
 
-      produceRequestInterceptor = config.
-        getConfiguredInstance(PRODUCE_REQUEST_INTERCEPTOR_CLASS_NAME_CONFIG, classOf[ProduceRequestInterceptor])
-
       // Create the request processor objects.
       val raftSupport = RaftSupport(forwardingManager, metadataCache)
       dataPlaneRequestProcessor = new KafkaApis(
@@ -471,7 +473,7 @@ class BrokerServer(
         tokenManager = tokenManager,
         apiVersionManager = apiVersionManager,
         clientMetricsManager = Some(clientMetricsManager),
-        produceRequestInterceptorManager = Option(produceRequestInterceptor).map(new ProduceRequestInterceptorManager(_)))
+        produceRequestInterceptorManager = produceRequestInterceptorManager)
 
       dataPlaneRequestHandlerPool = new KafkaRequestHandlerPool(config.nodeId,
         socketServer.dataPlaneRequestChannel, dataPlaneRequestProcessor, time,
